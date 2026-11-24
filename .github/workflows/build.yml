@@ -1,0 +1,47 @@
+name: Build TimeCal Phone and Wear
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - name: Find project (supports a single uploaded ZIP)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f settings.gradle ]; then
+            archive=$(find . -maxdepth 2 -type f -name 'TimeCal_V6_Source.zip' -print -quit)
+            test -n "$archive"
+            unzip -oq "$archive" -d "$RUNNER_TEMP/timecal"
+            project=$(find "$RUNNER_TEMP/timecal" -name settings.gradle -print -quit)
+            test -n "$project"
+            echo "PROJECT_DIR=$(dirname "$project")" >> "$GITHUB_ENV"
+          else
+            echo "PROJECT_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          fi
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build both APKs using one debug key
+        run: |
+          cd "$PROJECT_DIR"
+          gradle --no-daemon :app:assembleDebug :wear:assembleDebug
+          mkdir -p "$GITHUB_WORKSPACE/apks"
+          cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/apks/TimeCal_PHONE.apk"
+          cp wear/build/outputs/apk/debug/wear-debug.apk "$GITHUB_WORKSPACE/apks/TimeCal_WEAR.apk"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TimeCal-Phone-Wear
+          path: apks/*.apk
