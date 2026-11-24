@@ -1,21 +1,25 @@
 name: Build TimeCal Phone and Wear
+
 on:
   workflow_dispatch:
   push:
     branches: [main, master]
+
 permissions:
   contents: read
+
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
-      - uses: android-actions/setup-android@v3
-      - name: Find project (supports a single uploaded ZIP)
+
+      - name: Find project
         shell: bash
         run: |
           set -euo pipefail
@@ -29,18 +33,31 @@ jobs:
           else
             echo "PROJECT_DIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
           fi
-      - name: Install Android SDK
-        run: sdkmanager 'platforms;android-35' 'build-tools;35.0.0'
+
+      - name: Check Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDK="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-/usr/local/lib/android/sdk}}"
+          if [ ! -f "$SDK/platforms/android-35/android.jar" ] || [ ! -x "$SDK/build-tools/35.0.0/aapt2" ]; then
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" --licenses < <(yes)
+            "$SDK/cmdline-tools/latest/bin/sdkmanager" --sdk_root="$SDK" 'platforms;android-35' 'build-tools;35.0.0' < <(yes)
+          fi
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Build both APKs using one debug key
+
+      - name: Build both APKs
         run: |
           cd "$PROJECT_DIR"
           gradle --no-daemon :app:assembleDebug :wear:assembleDebug
           mkdir -p "$GITHUB_WORKSPACE/apks"
           cp app/build/outputs/apk/debug/app-debug.apk "$GITHUB_WORKSPACE/apks/TimeCal_PHONE.apk"
           cp wear/build/outputs/apk/debug/wear-debug.apk "$GITHUB_WORKSPACE/apks/TimeCal_WEAR.apk"
+
       - uses: actions/upload-artifact@v4
         with:
           name: TimeCal-Phone-Wear
